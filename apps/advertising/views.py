@@ -15,8 +15,9 @@ from asgiref.sync import sync_to_async
 from ipware import get_client_ip
 import hashlib
 import uuid
+from decimal import Decimal
 
-from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement, AdOpportunity
+from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement, AdOpportunity, DailySpending
 from .serializers import (
     CampaignSerializer, CampaignListSerializer, CreativeSerializer, 
     TargetSerializer, AdImpressionSerializer, AdClickSerializer,
@@ -203,43 +204,76 @@ class MobileAdServingView(APIView):
                 Q(targets__os_version_max__gte=os_version)
             )
         
-        # Demographic targeting
+        # Demographics targeting
         demo_query = Q()
-        if 'gender' in ad_data and ad_data['gender']:
+        gender = ad_data.get('gender', '')
+        age = ad_data.get('age')
+        
+        if gender:
             demo_query &= (
                 Q(targets__gender='all') | 
-                Q(targets__gender=ad_data['gender'])
+                Q(targets__gender=gender)
             )
         
-        if 'age' in ad_data and ad_data['age']:
-            age = ad_data['age']
+        if age:
             demo_query &= (
-                (Q(targets__age_min__isnull=True) | Q(targets__age_min__lte=age)) &
-                (Q(targets__age_max__isnull=True) | Q(targets__age_max__gte=age))
+                Q(targets__age_min__isnull=True) | Q(targets__age_min__lte=age)
+            ) & (
+                Q(targets__age_max__isnull=True) | Q(targets__age_max__gte=age)
             )
         
-        # Location targeting
-        location_query = Q()
-        if 'country' in ad_data and ad_data['country']:
-            country = ad_data['country'].upper()
-            location_query &= (
+        # Geographic targeting
+        geo_query = Q()
+        country = ad_data.get('country', '').upper()
+        region = ad_data.get('region', '')
+        city = ad_data.get('city', '')
+        
+        if country:
+            geo_query &= (
                 Q(targets__countries=[]) | 
                 Q(targets__countries__contains=[country])
             )
         
+        if region:
+            geo_query &= (
+                Q(targets__regions=[]) | 
+                Q(targets__regions__contains=[region])
+            )
+        
+        if city:
+            geo_query &= (
+                Q(targets__cities=[]) | 
+                Q(targets__cities__contains=[city])
+            )
+        
         # Interest targeting
+        interests = ad_data.get('interests', [])
         interest_query = Q()
-        if 'interests' in ad_data and ad_data['interests']:
-            # Find campaigns that target any of the user interests
-            interests = ad_data['interests']
-            # This is a simplification - in production, you'd use more sophisticated interest matching
-            interest_query &= Q(targets__interests__overlap=interests)
         
-        # Combine all criteria
-        final_query = base_query & device_query & demo_query & location_query & interest_query
+        if interests:
+            # Match any of the provided interests
+            for interest in interests:
+                interest_query |= Q(targets__interests__contains=[interest])
         
-        # Get eligible campaigns
-        return Campaign.objects.filter(final_query).distinct()
+        # Combine all filters and get campaigns
+        campaigns = Campaign.objects.filter(
+            base_query & device_query & demo_query & geo_query
+        ).distinct()
+        
+        # Apply interest filter separately if provided
+        if interests:
+            campaigns = campaigns.filter(interest_query)
+        
+        # Filter campaigns that haven't exceeded daily budget
+        eligible_campaigns = []
+        estimated_cost = Decimal('0.01')  # Estimated cost per impression
+        
+        for campaign in campaigns:
+            # Check if campaign can show ads (not paused for budget and has budget available)
+            if not campaign.is_paused_for_day() and campaign.can_show_ad(estimated_cost):
+                eligible_campaigns.append(campaign)
+        
+        return eligible_campaigns
     
     def _track_opportunities(self, request_id, eligible_campaigns, ad_data):
         """Track ad opportunities for sampled requests"""
@@ -324,13 +358,14 @@ class MobileAdServingView(APIView):
     
     @transaction.atomic
     def _log_impression(self, request, ad, ad_data):
-        """Log an ad impression"""
-        client_ip, is_routable = get_client_ip(request)
+        """Log an ad impression and record spending"""
+        ip_address, is_routable = get_client_ip(request)
         
+        # Create impression record
         impression = AdImpression.objects.create(
-            creative_id=ad.id,
-            campaign_id=ad.campaign_id,
-            ip_address=client_ip,
+            creative=ad,
+            campaign=ad.campaign,
+            ip_address=ip_address,
             user_agent=request.META.get('HTTP_USER_AGENT', ''),
             device_type=ad_data.get('device_type', ''),
             os=ad_data.get('os', ''),
@@ -339,8 +374,20 @@ class MobileAdServingView(APIView):
             region=ad_data.get('region', ''),
             city=ad_data.get('city', ''),
             app_id=ad_data.get('app_id', ''),
-            app_version=ad_data.get('app_version', '')
+            app_version=ad_data.get('app_version', ''),
         )
+        
+        # Record spending for this impression
+        impression_cost = Decimal('0.01')  # You can make this configurable
+        try:
+            daily_spending = ad.campaign.record_spending(impression_cost)
+            
+            # Log if budget was exceeded
+            if daily_spending.budget_exceeded:
+                print(f"Campaign {ad.campaign.name} exceeded daily budget and was paused")
+                
+        except Exception as e:
+            print(f"Error recording spending for campaign {ad.campaign.name}: {e}")
         
         return impression
 

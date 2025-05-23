@@ -4,6 +4,7 @@ from django.utils.translation import gettext_lazy as _
 from django.core.validators import MinValueValidator, MaxValueValidator
 import uuid
 from django.utils import timezone
+from decimal import Decimal
 
 
 class Campaign(models.Model):
@@ -74,6 +75,112 @@ class Campaign(models.Model):
             return 0.0
         
         return (shown / opportunities) * 100.0
+
+    def get_daily_spending(self, date=None):
+        """Get total spending for a specific date (today by default)"""
+        if date is None:
+            date = timezone.now().date()
+        
+        daily_spending, created = DailySpending.objects.get_or_create(
+            campaign=self,
+            date=date,
+            defaults={'amount_spent': Decimal('0.00')}
+        )
+        return daily_spending.amount_spent
+
+    def check_daily_budget_available(self, amount=None, date=None):
+        """Check if campaign has budget available for today"""
+        if date is None:
+            date = timezone.now().date()
+        
+        current_spending = self.get_daily_spending(date)
+        
+        if amount is None:
+            # Just check if any budget is available
+            return current_spending < self.daily_budget
+        else:
+            # Check if specific amount can be spent
+            return (current_spending + Decimal(str(amount))) <= self.daily_budget
+
+    def can_show_ad(self, estimated_cost=Decimal('0.01')):
+        """Check if campaign can show an ad based on daily budget"""
+        if not self.is_active:
+            return False
+        
+        # Check if we're within daily budget
+        if not self.check_daily_budget_available(estimated_cost):
+            return False
+        
+        return True
+
+    def record_spending(self, amount, date=None):
+        """Record spending for the campaign"""
+        if date is None:
+            date = timezone.now().date()
+        
+        daily_spending, created = DailySpending.objects.get_or_create(
+            campaign=self,
+            date=date,
+            defaults={'amount_spent': Decimal('0.00')}
+        )
+        
+        daily_spending.amount_spent += Decimal(str(amount))
+        daily_spending.save()
+        
+        # Check if daily budget exceeded and pause campaign if needed
+        if daily_spending.amount_spent >= self.daily_budget:
+            self.pause_for_day()
+        
+        return daily_spending
+
+    def pause_for_day(self):
+        """Pause campaign for the rest of the day due to budget limit"""
+        # You could implement a more sophisticated pause mechanism here
+        # For now, we'll just mark it in the daily spending record
+        today = timezone.now().date()
+        daily_spending, created = DailySpending.objects.get_or_create(
+            campaign=self,
+            date=today,
+            defaults={'amount_spent': Decimal('0.00')}
+        )
+        daily_spending.budget_exceeded = True
+        daily_spending.save()
+
+    def is_paused_for_day(self, date=None):
+        """Check if campaign is paused for today due to budget"""
+        if date is None:
+            date = timezone.now().date()
+        
+        try:
+            daily_spending = DailySpending.objects.get(campaign=self, date=date)
+            return daily_spending.budget_exceeded
+        except DailySpending.DoesNotExist:
+            return False
+
+
+class DailySpending(models.Model):
+    """Model to track daily spending for campaigns"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='daily_spendings')
+    date = models.DateField(_('Date'))
+    amount_spent = models.DecimalField(_('Amount Spent'), max_digits=10, decimal_places=2, default=0)
+    budget_exceeded = models.BooleanField(_('Budget Exceeded'), default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Daily Spending')
+        verbose_name_plural = _('Daily Spendings')
+        unique_together = ['campaign', 'date']
+        ordering = ['-date']
+
+    def __str__(self):
+        return f"{self.campaign.name} - {self.date}: ${self.amount_spent}"
+
+    @property
+    def remaining_budget(self):
+        """Calculate remaining daily budget"""
+        return max(self.campaign.daily_budget - self.amount_spent, Decimal('0.00'))
 
 
 class Placement(models.Model):

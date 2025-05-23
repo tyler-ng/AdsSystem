@@ -6,7 +6,7 @@ from django.db.models import Count, F, Sum, Case, When, IntegerField, FloatField
 from django.db.models.functions import Coalesce
 from django.utils.safestring import mark_safe
 from django.utils import timezone
-from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement, AdOpportunity
+from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement, AdOpportunity, DailySpending
 
 
 class TargetInline(admin.StackedInline):
@@ -44,14 +44,27 @@ class CreativeInline(admin.StackedInline):
     )
 
 
+class DailySpendingInline(admin.TabularInline):
+    model = DailySpending
+    extra = 0
+    readonly_fields = ('date', 'amount_spent', 'remaining_budget', 'budget_exceeded', 'created_at')
+    can_delete = False
+    
+    def remaining_budget(self, obj):
+        return obj.remaining_budget
+    remaining_budget.short_description = 'Remaining Budget'
+
+
 @admin.register(Campaign)
 class CampaignAdmin(admin.ModelAdmin):
-    list_display = ('name', 'company_name', 'advertiser', 'status', 'display_rate_formatted', 
-                   'impressions_today_count', 'start_date', 'is_active', 'view_analytics')
+    list_display = ('name', 'company_name', 'advertiser', 'status', 'daily_budget', 'spent_today', 
+                   'remaining_today', 'display_rate_formatted', 'impressions_today_count', 
+                   'start_date', 'is_active', 'view_analytics')
     list_filter = ('status', 'start_date', 'end_date', 'company_name')
     search_fields = ('name', 'advertiser__username', 'company_name')
-    readonly_fields = ('created_at', 'updated_at', 'display_rate_formatted', 'impressions_today_count')
-    inlines = [TargetInline, CreativeInline]
+    readonly_fields = ('created_at', 'updated_at', 'display_rate_formatted', 'impressions_today_count',
+                      'spent_today', 'remaining_today', 'budget_status')
+    inlines = [TargetInline, CreativeInline, DailySpendingInline]
     fieldsets = (
         (None, {
             'fields': ('name', 'company_name', 'advertiser', 'status', 'description')
@@ -65,10 +78,48 @@ class CampaignAdmin(admin.ModelAdmin):
         ('Budget & Schedule', {
             'fields': ('start_date', 'end_date', 'daily_budget', 'total_budget')
         }),
+        ('Daily Budget Status', {
+            'fields': ('spent_today', 'remaining_today', 'budget_status')
+        }),
         ('Metadata', {
             'fields': ('created_at', 'updated_at')
         }),
     )
+
+    def spent_today(self, obj):
+        """Show amount spent today"""
+        amount = obj.get_daily_spending()
+        return f"${amount:.2f}"
+    spent_today.short_description = 'Spent Today'
+    
+    def remaining_today(self, obj):
+        """Show remaining daily budget"""
+        spent = obj.get_daily_spending()
+        remaining = obj.daily_budget - spent
+        return f"${remaining:.2f}"
+    remaining_today.short_description = 'Remaining Today'
+    
+    def budget_status(self, obj):
+        """Show budget status with color coding"""
+        if obj.is_paused_for_day():
+            return mark_safe('<span style="color: red; font-weight: bold;">PAUSED - Budget Exceeded</span>')
+        
+        spent = obj.get_daily_spending()
+        remaining = obj.daily_budget - spent
+        percentage_spent = (spent / obj.daily_budget) * 100 if obj.daily_budget > 0 else 0
+        
+        if percentage_spent >= 90:
+            color = "red"
+            status = f"WARNING - {percentage_spent:.1f}% spent"
+        elif percentage_spent >= 70:
+            color = "orange" 
+            status = f"MODERATE - {percentage_spent:.1f}% spent"
+        else:
+            color = "green"
+            status = f"GOOD - {percentage_spent:.1f}% spent"
+        
+        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{status}</span>')
+    budget_status.short_description = 'Budget Status'
 
     def display_rate_formatted(self, obj):
         """Format the display rate as a percentage"""
@@ -297,4 +348,42 @@ class AdClickAdmin(admin.ModelAdmin):
         ('Metadata', {
             'fields': ('timestamp',)
         }),
-    ) 
+    )
+
+
+@admin.register(DailySpending)
+class DailySpendingAdmin(admin.ModelAdmin):
+    list_display = ('campaign', 'date', 'amount_spent', 'remaining_budget_display', 'budget_exceeded', 'percentage_spent')
+    list_filter = ('date', 'budget_exceeded', 'campaign')
+    search_fields = ('campaign__name',)
+    readonly_fields = ('created_at', 'updated_at', 'remaining_budget_display', 'percentage_spent')
+    fieldsets = (
+        ('Campaign Info', {
+            'fields': ('campaign', 'date')
+        }),
+        ('Budget Status', {
+            'fields': ('amount_spent', 'remaining_budget_display', 'percentage_spent', 'budget_exceeded')
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+    
+    def remaining_budget_display(self, obj):
+        """Display remaining budget"""
+        return f"${obj.remaining_budget:.2f}"
+    remaining_budget_display.short_description = 'Remaining Budget'
+    
+    def percentage_spent(self, obj):
+        """Show percentage of daily budget spent"""
+        if obj.campaign.daily_budget > 0:
+            percentage = (obj.amount_spent / obj.campaign.daily_budget) * 100
+            if percentage >= 90:
+                color = "red"
+            elif percentage >= 70:
+                color = "orange"
+            else:
+                color = "green"
+            return mark_safe(f'<span style="color: {color}; font-weight: bold;">{percentage:.1f}%</span>')
+        return "N/A"
+    percentage_spent.short_description = 'Budget Usage' 
