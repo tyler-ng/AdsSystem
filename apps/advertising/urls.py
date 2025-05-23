@@ -6,6 +6,7 @@ from . import views
 # Create a router for the main viewsets
 router = routers.DefaultRouter()
 router.register(r'campaigns', views.CampaignViewSet, basename='campaign')
+router.register(r'placements', views.PlacementViewSet, basename='placement')
 
 # Create nested routers for campaign resources
 campaign_router = routers.NestedDefaultRouter(router, r'campaigns', lookup='campaign')

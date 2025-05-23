@@ -5,7 +5,7 @@ from django.urls import path
 from django.db.models import Count, F, Sum, Case, When, IntegerField, FloatField
 from django.db.models.functions import Coalesce
 from django.utils.safestring import mark_safe
-from .models import Campaign, Creative, Target, AdImpression, AdClick
+from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement
 
 
 class TargetInline(admin.StackedInline):
@@ -32,7 +32,7 @@ class CreativeInline(admin.StackedInline):
     extra = 1
     fieldsets = (
         (None, {
-            'fields': ('name', 'type', 'is_active')
+            'fields': ('name', 'type', 'placement', 'is_active')
         }),
         ('Creative Content', {
             'fields': ('title', 'description', 'image', 'video', 'call_to_action', 'destination_url')
@@ -142,19 +142,38 @@ class CampaignAdmin(admin.ModelAdmin):
 
 @admin.register(Creative)
 class CreativeAdmin(admin.ModelAdmin):
-    list_display = ('name', 'campaign', 'type', 'is_active')
-    list_filter = ('type', 'is_active', 'campaign')
-    search_fields = ('name', 'campaign__name')
+    list_display = ('name', 'campaign', 'placement', 'type', 'is_active')
+    list_filter = ('type', 'is_active', 'campaign', 'placement')
+    search_fields = ('name', 'campaign__name', 'placement__name')
     readonly_fields = ('created_at', 'updated_at')
     fieldsets = (
         (None, {
-            'fields': ('campaign', 'name', 'type', 'is_active')
+            'fields': ('campaign', 'name', 'type', 'placement', 'is_active')
         }),
         ('Creative Content', {
             'fields': ('title', 'description', 'image', 'video', 'call_to_action', 'destination_url')
         }),
         ('Dimensions', {
             'fields': ('width', 'height')
+        }),
+        ('Metadata', {
+            'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+
+@admin.register(Placement)
+class PlacementAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'recommended_width', 'recommended_height', 'is_active', 'created_at')
+    list_filter = ('is_active', 'created_at')
+    search_fields = ('name', 'code', 'description')
+    readonly_fields = ('created_at', 'updated_at')
+    fieldsets = (
+        (None, {
+            'fields': ('name', 'code', 'description', 'is_active')
+        }),
+        ('Recommended Dimensions', {
+            'fields': ('recommended_width', 'recommended_height')
         }),
         ('Metadata', {
             'fields': ('created_at', 'updated_at')

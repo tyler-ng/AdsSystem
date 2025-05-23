@@ -23,15 +23,13 @@ services:
     image: postgres:15
     volumes:
       - postgres_data:/var/lib/postgresql/data/
-    env_file:
-      - ./.env
+    environment:
+      - POSTGRES_DB=ads_system
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
     ports:
-      - "5433:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "5432:5432"
+    restart: always
 
   redis:
     image: redis:7-alpine

@@ -14,11 +14,11 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from asgiref.sync import sync_to_async
 from ipware import get_client_ip
 
-from .models import Campaign, Creative, Target, AdImpression, AdClick
+from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement
 from .serializers import (
     CampaignSerializer, CampaignListSerializer, CreativeSerializer, 
     TargetSerializer, AdImpressionSerializer, AdClickSerializer,
-    AdRequestSerializer, MobileAdSerializer
+    AdRequestSerializer, MobileAdSerializer, PlacementSerializer
 )
 
 
@@ -96,6 +96,22 @@ class TargetViewSet(ModelViewSet):
     def perform_create(self, serializer):
         campaign_id = self.kwargs.get('campaign_pk')
         serializer.save(campaign_id=campaign_id)
+
+
+class PlacementViewSet(ModelViewSet):
+    """ViewSet for managing ad placements"""
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    serializer_class = PlacementSerializer
+    queryset = Placement.objects.all()
+    
+    def get_queryset(self):
+        user = self.request.user
+        # Only admin users can see all placements
+        if user.is_staff:
+            return Placement.objects.all()
+        # Regular users can still see active placements
+        return Placement.objects.filter(is_active=True)
 
 
 class MobileAdServingView(APIView):

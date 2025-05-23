@@ -1,6 +1,16 @@
 from rest_framework import serializers
-from .models import Campaign, Creative, Target, AdImpression, AdClick
+from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement
 from django.conf import settings
+
+
+class PlacementSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Placement
+        fields = [
+            'id', 'name', 'code', 'description', 'recommended_width', 
+            'recommended_height', 'is_active', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
 
 
 class TargetSerializer(serializers.ModelSerializer):
@@ -15,12 +25,14 @@ class TargetSerializer(serializers.ModelSerializer):
 
 
 class CreativeSerializer(serializers.ModelSerializer):
+    placement_details = PlacementSerializer(source='placement', read_only=True)
+    
     class Meta:
         model = Creative
         fields = [
-            'id', 'name', 'type', 'title', 'description', 'image', 'video',
-            'call_to_action', 'destination_url', 'width', 'height', 'is_active',
-            'created_at', 'updated_at'
+            'id', 'name', 'type', 'placement', 'placement_details', 'title', 
+            'description', 'image', 'video', 'call_to_action', 'destination_url', 
+            'width', 'height', 'is_active', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
 
@@ -105,12 +117,14 @@ class MobileAdSerializer(serializers.ModelSerializer):
     action_url = serializers.URLField(source='destination_url')
     image_url = serializers.SerializerMethodField()
     video_url = serializers.SerializerMethodField()
+    placement_code = serializers.CharField(source='placement.code', read_only=True, allow_null=True)
     
     class Meta:
         model = Creative
         fields = [
             'id', 'campaign_id', 'ad_type', 'title', 'description', 
-            'image_url', 'video_url', 'cta', 'action_url', 'width', 'height'
+            'image_url', 'video_url', 'cta', 'action_url', 'width', 'height',
+            'placement_code'
         ]
     
     def get_image_url(self, obj):

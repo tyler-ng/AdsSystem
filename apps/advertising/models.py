@@ -50,6 +50,28 @@ class Campaign(models.Model):
         return True
 
 
+class Placement(models.Model):
+    """Model for ad placement locations"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(_('Placement Name'), max_length=255)
+    code = models.CharField(_('Placement Code'), max_length=100, unique=True, 
+                          help_text=_('Unique code for this placement'))
+    description = models.TextField(_('Description'), blank=True)
+    recommended_width = models.PositiveIntegerField(_('Recommended Width'), null=True, blank=True)
+    recommended_height = models.PositiveIntegerField(_('Recommended Height'), null=True, blank=True)
+    is_active = models.BooleanField(_('Is Active'), default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = _('Placement')
+        verbose_name_plural = _('Placements')
+        ordering = ['name']
+
+    def __str__(self):
+        return self.name
+
+
 class Creative(models.Model):
     """Model for ad creatives"""
     TYPE_CHOICES = (
@@ -61,6 +83,9 @@ class Creative(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='creatives')
+    placement = models.ForeignKey(Placement, on_delete=models.SET_NULL, related_name='creatives', 
+                                null=True, blank=True, 
+                                help_text=_('The placement location for this creative'))
     name = models.CharField(_('Creative Name'), max_length=255)
     type = models.CharField(_('Creative Type'), max_length=20, choices=TYPE_CHOICES)
     title = models.CharField(_('Title'), max_length=255, blank=True)
