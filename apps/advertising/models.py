@@ -21,6 +21,12 @@ class Campaign(models.Model):
     company_name = models.CharField(_('Company Name'), max_length=255, blank=False, help_text=_('The company this campaign belongs to'))
     advertiser = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='campaigns')
     status = models.CharField(_('Status'), max_length=20, choices=STATUS_CHOICES, default='draft')
+    
+    # Sampling rate for opportunity tracking (percentage)
+    opportunity_sampling_rate = models.FloatField(_('Opportunity Sampling Rate (%)'), default=5.0,
+                                               validators=[MinValueValidator(0.1), MaxValueValidator(100.0)],
+                                               help_text=_('Percentage of traffic to sample for opportunity tracking'))
+    
     start_date = models.DateTimeField(_('Start Date'))
     end_date = models.DateTimeField(_('End Date'), null=True, blank=True)
     daily_budget = models.DecimalField(_('Daily Budget'), max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
@@ -48,6 +54,26 @@ class Campaign(models.Model):
         if self.end_date and now > self.end_date:
             return False
         return True
+        
+    @property
+    def impressions_today(self):
+        """Get the number of impressions for today"""
+        today = timezone.now().date()
+        return self.impressions.filter(
+            timestamp__date=today
+        ).count()
+        
+    @property
+    def display_rate_today(self):
+        """Calculate display rate based on sampled opportunities"""
+        today = timezone.now().date()
+        opportunities = self.opportunities.filter(timestamp__date=today).count()
+        shown = self.opportunities.filter(timestamp__date=today, was_shown=True).count()
+        
+        if opportunities == 0:
+            return 0.0
+        
+        return (shown / opportunities) * 100.0
 
 
 class Placement(models.Model):
@@ -149,6 +175,34 @@ class Target(models.Model):
 
     def __str__(self):
         return f"Target for {self.campaign.name}"
+
+
+# Model for sampled ad opportunities (for display rate calculation)
+class AdOpportunity(models.Model):
+    """Model for tracking sampled ad display opportunities"""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    campaign = models.ForeignKey(Campaign, on_delete=models.CASCADE, related_name='opportunities')
+    placement = models.ForeignKey(Placement, on_delete=models.CASCADE, related_name='opportunities')
+    was_shown = models.BooleanField(_('Was Ad Shown'), default=False, 
+                                  help_text=_('Whether this campaign was selected for display'))
+    request_id = models.CharField(_('Request ID'), max_length=100, 
+                               help_text=_('Unique identifier for the ad request'))
+    timestamp = models.DateTimeField(auto_now_add=True)
+    
+    # Additional context data
+    device_type = models.CharField(_('Device Type'), max_length=50, blank=True)
+    os = models.CharField(_('Operating System'), max_length=50, blank=True)
+    country = models.CharField(_('Country'), max_length=2, blank=True)
+    
+    class Meta:
+        verbose_name = _('Ad Opportunity')
+        verbose_name_plural = _('Ad Opportunities')
+        ordering = ['-timestamp']
+        indexes = [
+            models.Index(fields=['campaign', 'timestamp']),
+            models.Index(fields=['placement', 'timestamp']),
+            models.Index(fields=['request_id']),
+        ]
 
 
 class AdImpression(models.Model):

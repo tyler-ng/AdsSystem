@@ -3,7 +3,8 @@ from datetime import timedelta
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.contrib.auth import get_user_model
-from apps.advertising.models import Campaign, Creative, Target, Placement
+from apps.advertising.models import Campaign, Creative, Target, Placement, AdOpportunity, AdClick, AdImpression
+import uuid
 
 User = get_user_model()
 
@@ -14,11 +15,27 @@ class Command(BaseCommand):
         parser.add_argument('--campaigns', type=int, default=3, help='Number of campaigns to create')
         parser.add_argument('--placements', type=int, default=5, help='Number of placements to create')
         parser.add_argument('--creatives', type=int, default=10, help='Number of creatives to create')
+        parser.add_argument('--opportunities', type=int, default=100, help='Number of sample opportunities to create')
+        parser.add_argument('--clear', action='store_true', help='Clear existing data before creating new samples')
 
     def handle(self, *args, **options):
         num_campaigns = options['campaigns']
         num_placements = options['placements']
         num_creatives = options['creatives']
+        num_opportunities = options['opportunities']
+        clear_data = options['clear']
+        
+        # Clear existing data if requested
+        if clear_data:
+            self.stdout.write('Clearing existing data...')
+            AdOpportunity.objects.all().delete()
+            AdClick.objects.all().delete()
+            AdImpression.objects.all().delete()
+            Creative.objects.all().delete()
+            Target.objects.all().delete()
+            Campaign.objects.all().delete()
+            Placement.objects.all().delete()
+            self.stdout.write(self.style.SUCCESS('Existing data cleared'))
         
         # Check if admin user exists, create if not
         try:
@@ -46,33 +63,51 @@ class Command(BaseCommand):
             ('Rewarded', 'rewarded', 'Rewarded ad placement', 1080, 1920),
         ]
         
+        # Get existing placements
+        existing_placement_codes = set(Placement.objects.values_list('code', flat=True))
+        
         # Use predefined placements first, then generate random ones if needed
         for i in range(min(len(placement_types), num_placements)):
             name, code, desc, width, height = placement_types[i]
-            placement = Placement.objects.create(
-                name=name,
-                code=code,
-                description=desc,
-                recommended_width=width,
-                recommended_height=height,
-                is_active=True
-            )
+            
+            # Check if placement already exists
+            if code in existing_placement_codes:
+                placement = Placement.objects.get(code=code)
+                self.stdout.write(f'  - Using existing placement: {name}')
+            else:
+                placement = Placement.objects.create(
+                    name=name,
+                    code=code,
+                    description=desc,
+                    recommended_width=width,
+                    recommended_height=height,
+                    is_active=True
+                )
+                self.stdout.write(f'  - Created placement: {name}')
+                
             placements.append(placement)
-            self.stdout.write(f'  - Created placement: {name}')
         
         # Create additional random placements if needed
         for i in range(max(0, num_placements - len(placement_types))):
             idx = len(placement_types) + i
-            placement = Placement.objects.create(
-                name=f'Custom Placement {idx}',
-                code=f'custom_{idx}',
-                description=f'Custom placement {idx} description',
-                recommended_width=random.choice([300, 320, 728, 1080]),
-                recommended_height=random.choice([50, 90, 250, 280, 1920]),
-                is_active=True
-            )
+            code = f'custom_{idx}'
+            
+            # Check if placement already exists
+            if code in existing_placement_codes:
+                placement = Placement.objects.get(code=code)
+                self.stdout.write(f'  - Using existing placement: {placement.name}')
+            else:
+                placement = Placement.objects.create(
+                    name=f'Custom Placement {idx}',
+                    code=code,
+                    description=f'Custom placement {idx} description',
+                    recommended_width=random.choice([300, 320, 728, 1080]),
+                    recommended_height=random.choice([50, 90, 250, 280, 1920]),
+                    is_active=True
+                )
+                self.stdout.write(f'  - Created placement: Custom Placement {idx}')
+                
             placements.append(placement)
-            self.stdout.write(f'  - Created placement: Custom Placement {idx}')
         
         # Create sample campaigns
         self.stdout.write('Creating campaigns...')
@@ -85,6 +120,9 @@ class Command(BaseCommand):
             start_date = now - timedelta(days=random.randint(0, 30))
             end_date = start_date + timedelta(days=random.randint(30, 90))
             
+            # Set sampling rate
+            opportunity_sampling_rate = random.choice([1.0, 2.5, 5.0, 10.0])
+            
             campaign = Campaign.objects.create(
                 name=f'Campaign {i+1} - {random.choice(companies)}',
                 company_name=random.choice(companies),
@@ -94,10 +132,11 @@ class Command(BaseCommand):
                 end_date=end_date,
                 daily_budget=random.randint(50, 500),
                 total_budget=random.randint(1000, 10000),
-                description=f'This is a sample campaign {i+1}'
+                description=f'This is a sample campaign {i+1}',
+                opportunity_sampling_rate=opportunity_sampling_rate
             )
             campaigns.append(campaign)
-            self.stdout.write(f'  - Created campaign: {campaign.name}')
+            self.stdout.write(f'  - Created campaign: {campaign.name} (Sampling: {opportunity_sampling_rate}%)')
             
             # Create targeting for campaign
             Target.objects.create(
@@ -124,14 +163,15 @@ class Command(BaseCommand):
         ]
         cta_texts = ['Learn More', 'Download Now', 'Sign Up', 'Get Started', 'Buy Now']
         
+        creatives = []
         for i in range(num_creatives):
             campaign = random.choice(campaigns)
-            placement = random.choice(placements)
+            placement = random.choice(placements)  # Ensure a placement is selected
             creative_type = random.choice(creative_types)
             
             creative = Creative.objects.create(
                 campaign=campaign,
-                placement=placement,
+                placement=placement,  # Always provide a placement
                 name=f'Creative {i+1} for {campaign.name}',
                 type=creative_type,
                 title=random.choice(titles),
@@ -142,6 +182,35 @@ class Command(BaseCommand):
                 height=placement.recommended_height,
                 is_active=random.choice([True, False])
             )
+            creatives.append(creative)
             self.stdout.write(f'  - Created creative: {creative.name} ({creative.type}) for placement: {placement.name}')
         
-        self.stdout.write(self.style.SUCCESS(f'Successfully created {num_campaigns} campaigns, {len(placements)} placements, and {num_creatives} creatives')) 
+        # Create sample ad opportunities
+        self.stdout.write('Creating sample ad opportunities...')
+        device_types = ['smartphone', 'tablet', 'desktop']
+        os_types = ['iOS', 'Android', 'Windows', 'macOS']
+        countries = ['US', 'CA', 'UK', 'DE', 'FR', 'JP', 'AU']
+        
+        for i in range(num_opportunities):
+            campaign = random.choice(campaigns)
+            placement = random.choice(placements)
+            was_shown = random.random() < 0.4  # 40% chance of being shown
+            
+            opportunity = AdOpportunity.objects.create(
+                campaign=campaign,
+                placement=placement,
+                was_shown=was_shown,
+                request_id=f'req-{uuid.uuid4()}',
+                device_type=random.choice(device_types),
+                os=random.choice(os_types),
+                country=random.choice(countries)
+            )
+            
+            if i % 20 == 0:  # Only log every 20th opportunity to reduce output
+                status = "shown" if was_shown else "not shown"
+                self.stdout.write(f'  - Created opportunity for {campaign.name} ({status})')
+        
+        self.stdout.write(self.style.SUCCESS(
+            f'Successfully created {num_campaigns} campaigns, {len(placements)} placements, '
+            f'{num_creatives} creatives, and {num_opportunities} ad opportunities'
+        )) 

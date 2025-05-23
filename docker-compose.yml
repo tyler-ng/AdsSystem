@@ -24,7 +24,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data/
     environment:
-      - POSTGRES_DB=ads_system
+      - POSTGRES_DB=ads_db
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:

@@ -13,8 +13,10 @@ from rest_framework.viewsets import ModelViewSet
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from asgiref.sync import sync_to_async
 from ipware import get_client_ip
+import hashlib
+import uuid
 
-from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement
+from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement, AdOpportunity
 from .serializers import (
     CampaignSerializer, CampaignListSerializer, CreativeSerializer, 
     TargetSerializer, AdImpressionSerializer, AdClickSerializer,
@@ -132,6 +134,9 @@ class MobileAdServingView(APIView):
         ad_types = ad_data.get('ad_types', ['banner', 'interstitial', 'native'])
         limit = ad_data.get('limit', 1)
         
+        # Generate a unique request ID
+        request_id = str(uuid.uuid4())
+        
         # Try to get cached ads for this app (cached per app_id)
         cache_key = f"mobile_ads_{app_id}_{'-'.join(ad_types)}"
         cached_ads = cache.get(cache_key)
@@ -141,8 +146,14 @@ class MobileAdServingView(APIView):
             self._log_impression(request, cached_ads[0], ad_data)
             return Response(cached_ads)
         
+        # Get eligible campaigns for this request
+        eligible_campaigns = self._get_eligible_campaigns(ad_data, ad_types)
+        
+        # Track ad opportunities for sampled requests
+        self._track_opportunities(request_id, eligible_campaigns, ad_data)
+        
         # Get relevant ads for this request
-        ads = self._get_relevant_ads(ad_data, ad_types, limit)
+        ads = self._get_relevant_ads(ad_data, ad_types, limit, eligible_campaigns)
         
         if not ads:
             return Response({"detail": "No matching ads found"}, status=status.HTTP_404_NOT_FOUND)
@@ -159,19 +170,17 @@ class MobileAdServingView(APIView):
         
         return Response(response_data)
     
-    def _get_relevant_ads(self, ad_data, ad_types, limit):
-        """Find relevant ads based on targeting criteria"""
+    def _get_eligible_campaigns(self, ad_data, ad_types):
+        """Find all campaigns that are eligible for this request"""
         now = timezone.now()
         
-        # Base query for active campaigns with active creatives
+        # Base query for active campaigns
         base_query = Q(
-            campaign__status='active',
-            campaign__start_date__lte=now,
-            is_active=True,
-            type__in=ad_types
+            status='active',
+            start_date__lte=now
         ) & (
-            Q(campaign__end_date__isnull=True) | 
-            Q(campaign__end_date__gt=now)
+            Q(end_date__isnull=True) | 
+            Q(end_date__gt=now)
         )
         
         # Device targeting
@@ -180,33 +189,33 @@ class MobileAdServingView(APIView):
         
         device_query = Q()
         if os_name == 'android':
-            device_query &= Q(campaign__targets__os_android=True)
+            device_query &= Q(targets__os_android=True)
         elif os_name == 'ios':
-            device_query &= Q(campaign__targets__os_ios=True)
+            device_query &= Q(targets__os_ios=True)
         
         # If provided, add OS version constraints
         if os_version and os_name:
             device_query &= (
-                Q(campaign__targets__os_version_min='') | 
-                Q(campaign__targets__os_version_min__lte=os_version)
+                Q(targets__os_version_min='') | 
+                Q(targets__os_version_min__lte=os_version)
             ) & (
-                Q(campaign__targets__os_version_max='') | 
-                Q(campaign__targets__os_version_max__gte=os_version)
+                Q(targets__os_version_max='') | 
+                Q(targets__os_version_max__gte=os_version)
             )
         
         # Demographic targeting
         demo_query = Q()
         if 'gender' in ad_data and ad_data['gender']:
             demo_query &= (
-                Q(campaign__targets__gender='all') | 
-                Q(campaign__targets__gender=ad_data['gender'])
+                Q(targets__gender='all') | 
+                Q(targets__gender=ad_data['gender'])
             )
         
         if 'age' in ad_data and ad_data['age']:
             age = ad_data['age']
             demo_query &= (
-                (Q(campaign__targets__age_min__isnull=True) | Q(campaign__targets__age_min__lte=age)) &
-                (Q(campaign__targets__age_max__isnull=True) | Q(campaign__targets__age_max__gte=age))
+                (Q(targets__age_min__isnull=True) | Q(targets__age_min__lte=age)) &
+                (Q(targets__age_max__isnull=True) | Q(targets__age_max__gte=age))
             )
         
         # Location targeting
@@ -214,8 +223,8 @@ class MobileAdServingView(APIView):
         if 'country' in ad_data and ad_data['country']:
             country = ad_data['country'].upper()
             location_query &= (
-                Q(campaign__targets__countries=[]) | 
-                Q(campaign__targets__countries__contains=[country])
+                Q(targets__countries=[]) | 
+                Q(targets__countries__contains=[country])
             )
         
         # Interest targeting
@@ -224,7 +233,75 @@ class MobileAdServingView(APIView):
             # Find campaigns that target any of the user interests
             interests = ad_data['interests']
             # This is a simplification - in production, you'd use more sophisticated interest matching
-            interest_query &= Q(campaign__targets__interests__overlap=interests)
+            interest_query &= Q(targets__interests__overlap=interests)
+        
+        # Combine all criteria
+        final_query = base_query & device_query & demo_query & location_query & interest_query
+        
+        # Get eligible campaigns
+        return Campaign.objects.filter(final_query).distinct()
+    
+    def _track_opportunities(self, request_id, eligible_campaigns, ad_data):
+        """Track ad opportunities for sampled requests"""
+        if not eligible_campaigns:
+            return
+            
+        # Get the first eligible placement that matches the request
+        placement = None
+        if 'width' in ad_data and 'height' in ad_data and ad_data['width'] and ad_data['height']:
+            width = ad_data.get('width')
+            height = ad_data.get('height')
+            placement = Placement.objects.filter(
+                Q(recommended_width__lte=width) & 
+                Q(recommended_height__lte=height)
+            ).first()
+        
+        if not placement:
+            # Default to first active placement
+            placement = Placement.objects.filter(is_active=True).first()
+            
+        if not placement:
+            return
+            
+        # For each eligible campaign, determine if we should track this opportunity
+        for campaign in eligible_campaigns:
+            # Use the campaign's sampling rate to determine if we should track this opportunity
+            sampling_rate = campaign.opportunity_sampling_rate
+            
+            # Create a hash of the request ID and campaign ID for consistent sampling
+            hash_input = f"{request_id}:{campaign.id}"
+            hash_value = int(hashlib.md5(hash_input.encode()).hexdigest(), 16)
+            
+            # If the hash value falls within the sampling rate, track the opportunity
+            if hash_value % 100 < sampling_rate:
+                # The selected campaign is the one that will be shown
+                selected_campaign = eligible_campaigns.first()
+                was_shown = (campaign.id == selected_campaign.id) if selected_campaign else False
+                
+                # Record the opportunity
+                AdOpportunity.objects.create(
+                    campaign=campaign,
+                    placement=placement,
+                    was_shown=was_shown,
+                    request_id=request_id,
+                    device_type=ad_data.get('device_type', ''),
+                    os=ad_data.get('os', ''),
+                    country=ad_data.get('country', '')
+                )
+    
+    def _get_relevant_ads(self, ad_data, ad_types, limit, eligible_campaigns=None):
+        """Find relevant ads based on targeting criteria"""
+        now = timezone.now()
+        
+        if eligible_campaigns is None:
+            eligible_campaigns = self._get_eligible_campaigns(ad_data, ad_types)
+        
+        # Base query for creatives
+        base_query = Q(
+            campaign__in=eligible_campaigns,
+            is_active=True,
+            type__in=ad_types
+        )
         
         # Size constraints for banner ads
         size_query = Q()
@@ -238,7 +315,7 @@ class MobileAdServingView(APIView):
                 )
         
         # Combine all criteria
-        final_query = base_query & device_query & demo_query & location_query & interest_query & size_query
+        final_query = base_query & size_query
         
         # Get ads, ordered by newest campaigns first
         ads = Creative.objects.filter(final_query).select_related('campaign').order_by('-campaign__created_at')[:limit]
@@ -328,6 +405,12 @@ class AnalyticsView(APIView):
         click_count = AdClick.objects.filter(campaign=campaign).count()
         ctr = (click_count / impression_count * 100) if impression_count > 0 else 0
         
+        # Get display rate stats
+        today = timezone.now().date()
+        opportunities = AdOpportunity.objects.filter(campaign=campaign, timestamp__date=today).count()
+        shown = AdOpportunity.objects.filter(campaign=campaign, timestamp__date=today, was_shown=True).count()
+        display_rate = (shown / opportunities * 100) if opportunities > 0 else 0
+        
         # Get stats per creative
         creative_stats = []
         for creative in Creative.objects.filter(campaign=campaign):
@@ -352,6 +435,8 @@ class AnalyticsView(APIView):
             'impressions': impression_count,
             'clicks': click_count,
             'ctr': round(ctr, 2),
+            'display_rate': round(display_rate, 2),
+            'sampled_opportunities': opportunities,
             'creatives': creative_stats
         }
     

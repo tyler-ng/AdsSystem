@@ -5,7 +5,8 @@ from django.urls import path
 from django.db.models import Count, F, Sum, Case, When, IntegerField, FloatField
 from django.db.models.functions import Coalesce
 from django.utils.safestring import mark_safe
-from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement
+from django.utils import timezone
+from .models import Campaign, Creative, Target, AdImpression, AdClick, Placement, AdOpportunity
 
 
 class TargetInline(admin.StackedInline):
@@ -45,14 +46,21 @@ class CreativeInline(admin.StackedInline):
 
 @admin.register(Campaign)
 class CampaignAdmin(admin.ModelAdmin):
-    list_display = ('name', 'company_name', 'advertiser', 'status', 'start_date', 'end_date', 'daily_budget', 'is_active', 'view_analytics')
+    list_display = ('name', 'company_name', 'advertiser', 'status', 'display_rate_formatted', 
+                   'impressions_today_count', 'start_date', 'is_active', 'view_analytics')
     list_filter = ('status', 'start_date', 'end_date', 'company_name')
     search_fields = ('name', 'advertiser__username', 'company_name')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at', 'display_rate_formatted', 'impressions_today_count')
     inlines = [TargetInline, CreativeInline]
     fieldsets = (
         (None, {
             'fields': ('name', 'company_name', 'advertiser', 'status', 'description')
+        }),
+        ('Display Settings', {
+            'fields': ('opportunity_sampling_rate',)
+        }),
+        ('Performance Metrics', {
+            'fields': ('display_rate_formatted', 'impressions_today_count')
         }),
         ('Budget & Schedule', {
             'fields': ('start_date', 'end_date', 'daily_budget', 'total_budget')
@@ -61,6 +69,24 @@ class CampaignAdmin(admin.ModelAdmin):
             'fields': ('created_at', 'updated_at')
         }),
     )
+
+    def display_rate_formatted(self, obj):
+        """Format the display rate as a percentage"""
+        rate = obj.display_rate_today
+        today = timezone.now().date()
+        opportunities = obj.opportunities.filter(timestamp__date=today).count()
+        
+        if opportunities == 0:
+            return "No data (0 sampled opportunities)"
+        
+        sampling_rate = obj.opportunity_sampling_rate
+        return f"{rate:.2f}% (based on {opportunities} opportunities at {sampling_rate}% sampling rate)"
+    display_rate_formatted.short_description = 'Display Rate (Today)'
+    
+    def impressions_today_count(self, obj):
+        """Get the number of impressions for today"""
+        return obj.impressions_today
+    impressions_today_count.short_description = 'Impressions (Today)'
 
     def view_analytics(self, obj):
         """Add a link to view analytics for this campaign"""
@@ -85,6 +111,12 @@ class CampaignAdmin(admin.ModelAdmin):
         impressions_count = AdImpression.objects.filter(campaign=campaign).count()
         clicks_count = AdClick.objects.filter(campaign=campaign).count()
         ctr = round((clicks_count / impressions_count * 100) if impressions_count > 0 else 0, 2)
+        
+        # Get display rate data
+        today = timezone.now().date()
+        opportunities = AdOpportunity.objects.filter(campaign=campaign, timestamp__date=today).count()
+        shown = AdOpportunity.objects.filter(campaign=campaign, timestamp__date=today, was_shown=True).count()
+        display_rate = (shown / opportunities * 100) if opportunities > 0 else 0
         
         # Get creative-level analytics
         creatives_data = Creative.objects.filter(campaign=campaign).annotate(
@@ -127,6 +159,8 @@ class CampaignAdmin(admin.ModelAdmin):
             'impressions': impressions_count,
             'clicks': clicks_count,
             'ctr': ctr,
+            'display_rate': round(display_rate, 2),
+            'sampled_opportunities': opportunities,
             'creatives_data': creatives_data,
             'country_data': country_data,
             'device_data': device_data,
@@ -205,6 +239,25 @@ class TargetAdmin(admin.ModelAdmin):
         }),
         ('Metadata', {
             'fields': ('created_at', 'updated_at')
+        }),
+    )
+
+
+@admin.register(AdOpportunity)
+class AdOpportunityAdmin(admin.ModelAdmin):
+    list_display = ('campaign', 'placement', 'was_shown', 'timestamp', 'device_type', 'country')
+    list_filter = ('was_shown', 'timestamp', 'campaign', 'placement', 'device_type', 'country')
+    search_fields = ('campaign__name', 'placement__name', 'request_id')
+    readonly_fields = ('timestamp',)
+    fieldsets = (
+        (None, {
+            'fields': ('campaign', 'placement', 'was_shown', 'request_id')
+        }),
+        ('Device Information', {
+            'fields': ('device_type', 'os', 'country')
+        }),
+        ('Metadata', {
+            'fields': ('timestamp',)
         }),
     )
 

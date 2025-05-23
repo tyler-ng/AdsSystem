@@ -4,10 +4,10 @@
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.postgresql',
-        'NAME': 'ads_system',
+        'NAME': 'ads_db',
         'USER': 'postgres',
         'PASSWORD': 'postgres',
-        'HOST': 'localhost',  # Connect to local Docker container
+        'HOST': 'db',  # Connect to Docker container
         'PORT': '5432',       # Default PostgreSQL port
     }
 }
