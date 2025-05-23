@@ -1,0 +1,17 @@
+DEBUG=1
+SECRET_KEY=django-insecure-!obqg==iukt0^hu$#uzvcz&n^#d&$p3@&__8c68ipo3h6(b-rs
+DJANGO_ALLOWED_HOSTS=localhost 127.0.0.1 [::1]
+
+# Database settings
+POSTGRES_DB=ads_db
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_HOST=db
+POSTGRES_PORT=5432
+
+# Redis settings
+REDIS_HOST=redis
+REDIS_PORT=6379
+
+# Base URL for generating absolute URLs
+BASE_URL=http://localhost:8000 

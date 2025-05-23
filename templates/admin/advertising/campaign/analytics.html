@@ -1,0 +1,248 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block title %}Analytics for {{ campaign.name }}{% endblock %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+    .analytics-container {
+        margin: 20px 0;
+    }
+    .analytics-card {
+        background-color: #1f1f1f;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+        margin-bottom: 20px;
+        padding: 15px;
+        color: #f8f8f8;
+    }
+    .analytics-header {
+        border-bottom: 1px solid #444;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+    }
+    .analytics-title {
+        font-size: 18px;
+        font-weight: 500;
+        margin: 0;
+        color: #79aec8;
+    }
+    .analytics-subtitle {
+        color: #ddd;
+        font-size: 14px;
+        margin: 5px 0 0;
+    }
+    .analytics-metrics {
+        display: flex;
+        flex-wrap: wrap;
+        margin: 0 -10px;
+    }
+    .analytics-metric {
+        flex: 1;
+        margin: 10px;
+        min-width: 120px;
+        text-align: center;
+        background-color: #2d2d2d;
+        padding: 12px;
+        border-radius: 3px;
+    }
+    .metric-value {
+        font-size: 24px;
+        font-weight: 500;
+        color: #f5dd5d;
+    }
+    .metric-label {
+        color: #ddd;
+        font-size: 14px;
+        margin-top: 5px;
+    }
+    .analytics-table {
+        border-collapse: collapse;
+        width: 100%;
+        color: #f8f8f8;
+    }
+    .analytics-table th,
+    .analytics-table td {
+        border-bottom: 1px solid #444;
+        padding: 10px;
+        text-align: left;
+    }
+    .analytics-table th {
+        background-color: #333;
+        font-weight: 500;
+        color: #79aec8;
+    }
+    .analytics-table tr:nth-child(odd) {
+        background-color: #2a2a2a;
+    }
+    .analytics-table tr:nth-child(even) {
+        background-color: #252525;
+    }
+    .chart-container {
+        height: 300px;
+        margin-top: 20px;
+        width: 100%;
+    }
+    .analytics-metric h3 {
+        color: #79aec8;
+        margin-top: 0;
+        margin-bottom: 15px;
+    }
+    .breadcrumbs a {
+        color: #79aec8;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+    <a href="{% url 'admin:index' %}">Home</a> &rsaquo;
+    <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a> &rsaquo;
+    <a href="{% url 'admin:advertising_campaign_changelist' %}">Campaigns</a> &rsaquo;
+    <a href="{% url 'admin:advertising_campaign_change' object_id=campaign.id %}">{{ campaign.name }}</a> &rsaquo;
+    Analytics
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-container">
+    <div class="analytics-card">
+        <div class="analytics-header">
+            <h2 class="analytics-title">Campaign Overview: {{ campaign.name }}</h2>
+            <p class="analytics-subtitle">Company: {{ campaign.company_name }} | Status: {{ campaign.status }}</p>
+        </div>
+        
+        <div class="analytics-metrics">
+            <div class="analytics-metric">
+                <div class="metric-value">{{ impressions }}</div>
+                <div class="metric-label">Impressions</div>
+            </div>
+            <div class="analytics-metric">
+                <div class="metric-value">{{ clicks }}</div>
+                <div class="metric-label">Clicks</div>
+            </div>
+            <div class="analytics-metric">
+                <div class="metric-value">{{ ctr }}%</div>
+                <div class="metric-label">CTR</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="analytics-card">
+        <div class="analytics-header">
+            <h2 class="analytics-title">Creatives Performance</h2>
+        </div>
+        
+        <table class="analytics-table">
+            <thead>
+                <tr>
+                    <th>Creative Name</th>
+                    <th>Type</th>
+                    <th>Impressions</th>
+                    <th>Clicks</th>
+                    <th>CTR</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for creative in creatives_data %}
+                <tr>
+                    <td>{{ creative.name }}</td>
+                    <td>{{ creative.type }}</td>
+                    <td>{{ creative.impression_count }}</td>
+                    <td>{{ creative.click_count }}</td>
+                    <td>{{ creative.ctr_value|floatformat:2 }}%</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="5">No creatives data available</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="analytics-card">
+        <div class="analytics-header">
+            <h2 class="analytics-title">Geographic Distribution</h2>
+        </div>
+        
+        <table class="analytics-table">
+            <thead>
+                <tr>
+                    <th>Country</th>
+                    <th>Impressions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in country_data %}
+                <tr>
+                    <td>{{ item.country|default:"Unknown" }}</td>
+                    <td>{{ item.count }}</td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="2">No country data available</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="analytics-card">
+        <div class="analytics-header">
+            <h2 class="analytics-title">Device Distribution</h2>
+        </div>
+        
+        <div class="analytics-metrics">
+            <div class="analytics-metric" style="flex: 2;">
+                <h3>Device Types</h3>
+                <table class="analytics-table">
+                    <thead>
+                        <tr>
+                            <th>Device Type</th>
+                            <th>Impressions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in device_data %}
+                        <tr>
+                            <td>{{ item.device_type|default:"Unknown" }}</td>
+                            <td>{{ item.count }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2">No device data available</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="analytics-metric" style="flex: 2;">
+                <h3>Operating Systems</h3>
+                <table class="analytics-table">
+                    <thead>
+                        <tr>
+                            <th>OS</th>
+                            <th>Impressions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in os_data %}
+                        <tr>
+                            <td>{{ item.os|default:"Unknown" }}</td>
+                            <td>{{ item.count }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2">No OS data available</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
