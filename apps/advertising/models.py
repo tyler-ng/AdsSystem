@@ -16,6 +16,14 @@ class Campaign(models.Model):
         ('completed', _('Completed')),
         ('archived', _('Archived')),
     )
+    
+    BUDGET_EXCEEDED_ACTIONS = (
+        ('pause_day', _('Pause for the day')),
+        ('pause_campaign', _('Pause entire campaign')),
+        ('continue_limited', _('Continue with limited frequency')),
+        ('stop_immediately', _('Stop serving ads immediately')),
+        ('email_notify', _('Email notification only')),
+    )
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(_('Campaign Name'), max_length=255)
@@ -23,10 +31,29 @@ class Campaign(models.Model):
     advertiser = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='campaigns')
     status = models.CharField(_('Status'), max_length=20, choices=STATUS_CHOICES, default='draft')
     
-    # Sampling rate for opportunity tracking (percentage)
-    opportunity_sampling_rate = models.FloatField(_('Opportunity Sampling Rate (%)'), default=5.0,
-                                               validators=[MinValueValidator(0.1), MaxValueValidator(100.0)],
-                                               help_text=_('Percentage of traffic to sample for opportunity tracking'))
+    # Budget exceeded configuration
+    budget_exceeded_action = models.CharField(
+        _('Budget Exceeded Action'), 
+        max_length=20, 
+        choices=BUDGET_EXCEEDED_ACTIONS, 
+        default='pause_day',
+        help_text=_('What to do when daily budget is exceeded')
+    )
+    
+    # Opportunity sampling rate for tracking
+    opportunity_sampling_rate = models.FloatField(
+        _('Opportunity Sampling Rate (%)'), 
+        default=5.0,
+        validators=[MinValueValidator(0.1), MaxValueValidator(100.0)],
+        help_text=_('Percentage of traffic to sample for opportunity tracking')
+    )
+    
+    # Optional: Reduced frequency when budget exceeded (for continue_limited option)
+    budget_exceeded_frequency_cap = models.PositiveIntegerField(
+        _('Budget Exceeded Frequency Cap'),
+        default=1,
+        help_text=_('Maximum ads per user when budget exceeded (for continue_limited action)')
+    )
     
     start_date = models.DateTimeField(_('Start Date'))
     end_date = models.DateTimeField(_('End Date'), null=True, blank=True)
@@ -103,18 +130,37 @@ class Campaign(models.Model):
             return (current_spending + Decimal(str(amount))) <= self.daily_budget
 
     def can_show_ad(self, estimated_cost=Decimal('0.01')):
-        """Check if campaign can show an ad based on daily budget"""
+        """Check if campaign can show an ad based on daily budget and configuration"""
         if not self.is_active:
             return False
         
         # Check if we're within daily budget
         if not self.check_daily_budget_available(estimated_cost):
-            return False
+            # Budget exceeded - check the configured action
+            return self._handle_budget_exceeded_check()
         
         return True
 
+    def _handle_budget_exceeded_check(self):
+        """Handle different budget exceeded actions for ad serving"""
+        if self.budget_exceeded_action == 'pause_day':
+            return False  # Don't show ads for rest of day
+        elif self.budget_exceeded_action == 'pause_campaign':
+            return False  # Don't show ads (campaign should be paused)
+        elif self.budget_exceeded_action == 'continue_limited':
+            # Could implement frequency capping logic here
+            # For now, allow with reduced probability
+            import random
+            return random.random() < 0.1  # 10% chance to show ad
+        elif self.budget_exceeded_action == 'stop_immediately':
+            return False  # Stop immediately
+        elif self.budget_exceeded_action == 'email_notify':
+            return True  # Continue showing ads but notify
+        
+        return False  # Default to not showing
+
     def record_spending(self, amount, date=None):
-        """Record spending for the campaign"""
+        """Record spending for the campaign and handle budget exceeded actions"""
         if date is None:
             date = timezone.now().date()
         
@@ -127,11 +173,50 @@ class Campaign(models.Model):
         daily_spending.amount_spent += Decimal(str(amount))
         daily_spending.save()
         
-        # Check if daily budget exceeded and pause campaign if needed
+        # Check if daily budget exceeded and handle according to configuration
         if daily_spending.amount_spent >= self.daily_budget:
-            self.pause_for_day()
+            self._handle_budget_exceeded(daily_spending)
         
         return daily_spending
+
+    def _handle_budget_exceeded(self, daily_spending):
+        """Handle different budget exceeded actions"""
+        daily_spending.budget_exceeded = True
+        daily_spending.save()
+        
+        if self.budget_exceeded_action == 'pause_day':
+            # Mark as paused for the day (existing behavior)
+            pass  # budget_exceeded flag is already set
+            
+        elif self.budget_exceeded_action == 'pause_campaign':
+            # Pause the entire campaign
+            self.status = 'paused'
+            self.save()
+            self._send_budget_notification('Campaign paused due to budget exceeded')
+            
+        elif self.budget_exceeded_action == 'continue_limited':
+            # Continue with limited frequency (handled in can_show_ad)
+            self._send_budget_notification('Budget exceeded - serving ads with limited frequency')
+            
+        elif self.budget_exceeded_action == 'stop_immediately':
+            # Stop serving immediately but don't pause campaign
+            self._send_budget_notification('Budget exceeded - ads stopped for today')
+            
+        elif self.budget_exceeded_action == 'email_notify':
+            # Just send notification but continue
+            self._send_budget_notification('Daily budget exceeded but campaign continues')
+
+    def _send_budget_notification(self, message):
+        """Send budget exceeded notification (placeholder for actual implementation)"""
+        # TODO: Implement actual email notification
+        print(f"BUDGET NOTIFICATION for {self.name}: {message}")
+        
+        # You could implement:
+        # - Email to advertiser
+        # - Slack notification  
+        # - SMS alert
+        # - Dashboard notification
+        pass
 
     def pause_for_day(self):
         """Pause campaign for the rest of the day due to budget limit"""

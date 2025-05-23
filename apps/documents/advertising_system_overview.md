@@ -15,7 +15,8 @@ When a business partner wants to advertise with us, we create a **Campaign** for
 - Company name of the advertiser
 - Start and end dates for when ads should run
 - Budget limits (how much they want to spend per day and in total)
-- Daily spending limits prevent overspending in a single day
+- Advanced daily spending controls with configurable budget exceeded actions
+- Real-time budget monitoring and automatic overspend protection
 
 **Campaign Status Management:**
 - **Draft**: Campaign is being set up but not running yet
@@ -111,61 +112,96 @@ Our system automatically tracks how well ads are performing:
 - Device type performance
 - Time-of-day performance patterns
 
-### 6. Budget and Cost Management
+### 6. Daily Spending Controls & Budget Management
+
+Our system provides comprehensive budget protection to ensure advertisers never overspend their intended limits. This feature gives businesses complete control over their advertising costs with automatic safeguards.
+
+**Daily Spending Limits**
+- **What it does**: Prevents campaigns from exceeding their daily budget allocation
+- **How it works**: 
+  - System tracks every ad impression cost in real-time (currently $0.01 per impression)
+  - Automatically stops serving ads when daily limit is reached
+  - Resets automatically at midnight for the next day
+- **Business benefit**: Protects against unexpected cost spikes and provides predictable daily spending
+
+**Configurable Budget Exceeded Actions**
+
+When a campaign reaches its daily spending limit, advertisers can choose from five different response actions:
+
+1. **Pause for the Day (Default)**
+   - Stops showing ads for the rest of the current day only
+   - Campaign automatically resumes the next day
+   - Best for: Standard campaigns with consistent daily budgets
+
+2. **Pause Entire Campaign**
+   - Completely pauses the campaign until manually reactivated by an admin
+   - Sends notification to the advertiser
+   - Best for: Campaigns that require manual review before continuing
+
+3. **Continue with Limited Frequency**
+   - Keeps showing ads but with significantly reduced frequency (10% of normal rate)
+   - Uses configurable frequency cap settings
+   - Best for: High-value campaigns that need continued exposure even after budget limits
+
+4. **Stop Immediately**
+   - Stops ads immediately for the day but keeps campaign active for tomorrow
+   - More conservative approach than "pause for day"
+   - Best for: Cost-sensitive campaigns requiring strict budget adherence
+
+5. **Email Notification Only**
+   - Continues serving ads normally but sends alerts to advertisers
+   - Useful for monitoring high-performing campaigns
+   - Best for: Campaigns where slight budget overruns are acceptable
+
+**Real-Time Budget Monitoring**
+
+Our admin dashboard provides comprehensive budget oversight:
+
+**Budget Status Indicators**
+- **Green**: Under 70% of daily budget spent - "GOOD"
+- **Orange**: 70-90% of daily budget spent - "MODERATE" 
+- **Red**: Over 90% of daily budget spent - "WARNING"
+- **Red with Alert**: Budget exceeded - shows configured action taken
+
+**Daily Spending Tracking**
+- Real-time spending amounts for each campaign
+- Remaining daily budget calculations
+- Historical spending patterns over the last 7 days
+- Budget exceeded events and actions taken
+
+**Administrative Controls**
+- View all campaign budget statuses in one dashboard
+- Filter campaigns by budget status (within budget, exceeded, etc.)
+- Manual budget reset capabilities for special circumstances
+- Detailed spending reports with date ranges
 
 **How Budget Controls Work:**
-- Daily spending limits prevent overspending in a single day
-- Total campaign budget caps ensure campaigns don't exceed overall limits
-- Real-time budget tracking shows current spending
-- Automatic campaign pausing when budgets are reached
+- **Real-time tracking**: Every ad impression immediately updates spending totals
+- **Automatic enforcement**: System checks budget before serving each ad
+- **Immediate response**: Configured actions trigger instantly when limits are reached
+- **Daily reset**: All budget limits automatically reset at midnight
+- **Notification system**: Advertisers receive alerts about budget status changes
 
-**Cost Tracking:**
-- Cost per impression (CPM)
-- Cost per click (CPC)
-- Total campaign spending
-- Remaining budget alerts
+**Cost Tracking Features:**
+- Cost per impression (CPM) - currently $0.01 per impression
+- Cost per click (CPC) calculation based on actual clicks
+- Total campaign spending with daily breakdowns
+- Budget utilization percentages
+- Remaining budget alerts and projections
 
-### 7. Mobile App Integration
+**Business Benefits of Daily Spending Controls:**
+- **Cost Predictability**: Advertisers know exactly how much they'll spend each day
+- **Overspend Protection**: Automatic safeguards prevent budget overruns
+- **Flexible Response**: Five different actions accommodate various business needs
+- **Real-time Visibility**: Instant budget status updates in admin dashboard
+- **Historical Analysis**: Track spending patterns to optimize future campaigns
+- **Risk Management**: Different protection levels for different campaign priorities
 
-**For App Developers:**
-- Simple integration process to start showing ads
-- Flexible ad placement options
-- Automatic ad loading and display
-- Revenue sharing from ad displays
+**Technical Implementation:**
+- Database tracking of daily spending per campaign
+- Automatic budget checks before each ad impression
+- Configurable spending thresholds and actions
+- Integration with ad serving system for real-time enforcement
+- Admin interface for monitoring and manual controls
 
-**For Users:**
-- Relevant ads based on their interests
-- Non-intrusive ad experiences
-- Quick loading times
-- Clear marking of advertising content
-
-## Business Benefits
-
-**For Advertisers:**
-- Reach mobile users effectively
-- Target specific audiences
-- Track campaign performance in real-time
-- Control advertising costs with budget limits
-- Get detailed analytics and insights
-
-**For App Developers:**
-- Generate revenue from their apps
-- Easy integration with minimal coding
-- Choose ad types that fit their app experience
-- Control ad frequency and placement
-
-**For Our Business:**
-- Revenue from advertising placements
-- Scalable platform for multiple partners
-- Data insights for improving ad performance
-- Growing network of apps and advertisers
-
-## How the System Supports Business Growth
-
-1. **Partner Onboarding**: Easy setup for new advertising partners
-2. **Campaign Scaling**: Support for multiple campaigns per partner
-3. **Performance Optimization**: Data-driven insights to improve ad effectiveness
-4. **Revenue Growth**: Multiple revenue streams from various campaign types
-5. **Market Expansion**: Support for different regions and demographics
-
-This system creates a win-win situation where businesses can effectively advertise to mobile users, app developers can monetize their apps, and we facilitate successful advertising partnerships. 
+This comprehensive budget management system ensures that our advertising partners have complete control over their spending while providing multiple layers of protection against cost overruns. The flexible action system accommodates different business strategies, from strict cost control to performance-focused approaches.

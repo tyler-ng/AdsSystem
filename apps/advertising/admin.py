@@ -57,10 +57,10 @@ class DailySpendingInline(admin.TabularInline):
 
 @admin.register(Campaign)
 class CampaignAdmin(admin.ModelAdmin):
-    list_display = ('name', 'company_name', 'advertiser', 'status', 'daily_budget', 'spent_today', 
-                   'remaining_today', 'display_rate_formatted', 'impressions_today_count', 
-                   'start_date', 'is_active', 'view_analytics')
-    list_filter = ('status', 'start_date', 'end_date', 'company_name')
+    list_display = ('name', 'company_name', 'advertiser', 'status', 'budget_exceeded_action',
+                   'daily_budget', 'spent_today', 'remaining_today', 'display_rate_formatted', 
+                   'impressions_today_count', 'start_date', 'is_active', 'view_analytics')
+    list_filter = ('status', 'budget_exceeded_action', 'start_date', 'end_date', 'company_name')
     search_fields = ('name', 'advertiser__username', 'company_name')
     readonly_fields = ('created_at', 'updated_at', 'display_rate_formatted', 'impressions_today_count',
                       'spent_today', 'remaining_today', 'budget_status')
@@ -69,14 +69,18 @@ class CampaignAdmin(admin.ModelAdmin):
         (None, {
             'fields': ('name', 'company_name', 'advertiser', 'status', 'description')
         }),
+        ('Budget Configuration', {
+            'fields': ('daily_budget', 'total_budget', 'budget_exceeded_action', 'budget_exceeded_frequency_cap'),
+            'description': 'Configure how the campaign behaves when daily budget limits are reached.'
+        }),
         ('Display Settings', {
             'fields': ('opportunity_sampling_rate',)
         }),
         ('Performance Metrics', {
             'fields': ('display_rate_formatted', 'impressions_today_count')
         }),
-        ('Budget & Schedule', {
-            'fields': ('start_date', 'end_date', 'daily_budget', 'total_budget')
+        ('Schedule', {
+            'fields': ('start_date', 'end_date')
         }),
         ('Daily Budget Status', {
             'fields': ('spent_today', 'remaining_today', 'budget_status')
@@ -100,9 +104,10 @@ class CampaignAdmin(admin.ModelAdmin):
     remaining_today.short_description = 'Remaining Today'
     
     def budget_status(self, obj):
-        """Show budget status with color coding"""
+        """Show budget status with color coding and action info"""
         if obj.is_paused_for_day():
-            return mark_safe('<span style="color: red; font-weight: bold;">PAUSED - Budget Exceeded</span>')
+            action_text = obj.get_budget_exceeded_action_display()
+            return mark_safe(f'<span style="color: red; font-weight: bold;">EXCEEDED - {action_text}</span>')
         
         spent = obj.get_daily_spending()
         remaining = obj.daily_budget - spent
@@ -118,7 +123,11 @@ class CampaignAdmin(admin.ModelAdmin):
             color = "green"
             status = f"GOOD - {percentage_spent:.1f}% spent"
         
-        return mark_safe(f'<span style="color: {color}; font-weight: bold;">{status}</span>')
+        action_text = obj.get_budget_exceeded_action_display()
+        return mark_safe(
+            f'<span style="color: {color}; font-weight: bold;">{status}</span><br>'
+            f'<small>On exceed: {action_text}</small>'
+        )
     budget_status.short_description = 'Budget Status'
 
     def display_rate_formatted(self, obj):
