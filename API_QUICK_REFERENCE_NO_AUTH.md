@@ -10,17 +10,17 @@ All endpoints are currently accessible **WITHOUT authentication tokens** for tes
 
 ## 📊 Most Used Endpoints (No Auth Required)
 
-### 1. Get All Active Campaigns
+### 1. Get All Active Campaigns (with Image URLs)
 ```bash
 curl -X GET "http://localhost:8000/api/v1/advertising/campaigns/?status=active"
 ```
 
-### 2. Get All Campaigns
+### 2. Get All Campaigns (with Primary Image and Count)
 ```bash
 curl -X GET "http://localhost:8000/api/v1/advertising/campaigns/"
 ```
 
-### 3. Get Campaign Details
+### 3. Get Campaign Details (with All Image URLs)
 ```bash
 curl -X GET "http://localhost:8000/api/v1/advertising/campaigns/{campaign_id}/"
 ```
@@ -47,7 +47,7 @@ curl -X PATCH http://localhost:8000/api/v1/advertising/campaigns/{campaign_id}/ 
   -d '{"status": "active"}'
 ```
 
-### 6. Request Mobile Ad
+### 6. Request Mobile Ad (with Image URLs)
 ```bash
 curl -X POST http://localhost:8000/api/v1/advertising/mobile/ads/ \
   -H "Content-Type: application/json" \
@@ -63,6 +63,25 @@ curl -X POST http://localhost:8000/api/v1/advertising/mobile/ads/ \
 ```bash
 curl -X GET "http://localhost:8000/api/v1/advertising/analytics/"
 ```
+
+## 🖼️ **NEW: Image URL Features**
+
+### Campaign List with Primary Image
+```bash
+curl -X GET "http://localhost:8000/api/v1/advertising/campaigns/" | jq '.results[] | {id, name, primary_image, images_count}'
+```
+
+### Campaign Details with All Image URLs
+```bash
+curl -X GET "http://localhost:8000/api/v1/advertising/campaigns/{campaign_id}/" | jq '.campaign_images'
+```
+
+### Mobile-Optimized Image Downloads
+All image URLs returned are full absolute URLs that mobile apps can directly download:
+- `primary_image`: First available image URL for quick display
+- `images_count`: Total number of images in campaign
+- `campaign_images`: Array of all images with metadata
+- Creative `image_url` and `video_url`: Full download URLs
 
 ## 🎯 Campaign Management (No Auth)
 
@@ -334,7 +353,7 @@ curl -X GET "http://localhost:8000/api/v1/advertising/campaigns/" | jq '.results
 
 ## 🔄 Response Examples
 
-### Campaign List Response
+### Campaign List Response (Updated with Image URLs)
 ```json
 {
   "count": 1,
@@ -352,13 +371,62 @@ curl -X GET "http://localhost:8000/api/v1/advertising/campaigns/" | jq '.results
       "total_budget": "10000.00",
       "budget_exceeded_action": "pause_day",
       "created_at": "2025-05-26T10:00:00Z",
-      "is_active": true
+      "is_active": true,
+      "primary_image": "http://localhost:8000/media/ad_creatives/banner.jpg",
+      "images_count": 3
     }
   ]
 }
 ```
 
-### Mobile Ad Response
+### Campaign Detail Response (with Campaign Images)
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Test Campaign",
+  "campaign_images": [
+    {
+      "creative_id": "770e8400-e29b-41d4-a716-446655440002",
+      "creative_name": "Banner Creative",
+      "creative_type": "banner",
+      "image_url": "http://localhost:8000/media/ad_creatives/banner.jpg",
+      "width": 320,
+      "height": 50,
+      "title": "Great Product!",
+      "description": "Amazing deal",
+      "call_to_action": "Buy Now",
+      "destination_url": "https://example.com"
+    },
+    {
+      "creative_id": "880e8400-e29b-41d4-a716-446655440003",
+      "creative_name": "Interstitial Creative",
+      "creative_type": "interstitial",
+      "image_url": "http://localhost:8000/media/ad_creatives/interstitial.jpg",
+      "width": 320,
+      "height": 480,
+      "title": "Special Offer!",
+      "description": "Limited time deal",
+      "call_to_action": "Get Now",
+      "destination_url": "https://example.com/offer"
+    }
+  ],
+  "creatives": [
+    {
+      "id": "770e8400-e29b-41d4-a716-446655440002",
+      "name": "Banner Creative",
+      "type": "banner",
+      "image": "/media/ad_creatives/banner.jpg",
+      "image_url": "http://localhost:8000/media/ad_creatives/banner.jpg",
+      "video_url": null,
+      "title": "Great Product!",
+      "call_to_action": "Buy Now",
+      "destination_url": "https://example.com"
+    }
+  ]
+}
+```
+
+### Mobile Ad Response (Updated with Full URLs)
 ```json
 [
   {
