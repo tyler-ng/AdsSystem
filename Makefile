@@ -1,7 +1,7 @@
 .PHONY: build up down logs shell django-shell makemigrations migrate createsuperuser collectstatic test lint format backup
 
 # Variables
-COMPOSE = docker-compose
+COMPOSE = docker compose
 COMPOSE_RUN = $(COMPOSE) run --rm
 COMPOSE_EXEC = $(COMPOSE) exec
 WEB = web

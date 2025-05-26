@@ -33,10 +33,8 @@ class CampaignPagination(PageNumberPagination):
 
 class CampaignViewSet(ModelViewSet):
     """ViewSet for managing campaigns"""
-    # TEMPORARILY DISABLED FOR TESTING
-    # authentication_classes = [JWTAuthentication]
-    # permission_classes = [IsAuthenticated]
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
     pagination_class = CampaignPagination
     queryset = Campaign.objects.all()
     
@@ -46,46 +44,34 @@ class CampaignViewSet(ModelViewSet):
         return CampaignSerializer
     
     def get_queryset(self):
-        # TEMPORARILY RETURN ALL CAMPAIGNS (NO USER FILTERING)
-        return Campaign.objects.all()
-        # user = self.request.user
-        # # Admin can see all campaigns
-        # if user.is_staff:
-        #     return Campaign.objects.all()
-        # # Regular users can only see their own campaigns
-        # return Campaign.objects.filter(advertiser=user)
+        user = self.request.user
+        # Admin can see all campaigns
+        if user.is_staff:
+            return Campaign.objects.all()
+        # Regular users can only see their own campaigns
+        return Campaign.objects.filter(advertiser=user)
     
     def perform_create(self, serializer):
-        # TEMPORARILY USE FIRST USER IF NO AUTH
-        from django.contrib.auth import get_user_model
-        User = get_user_model()
-        user = User.objects.first()
-        serializer.save(advertiser=user)
-        # serializer.save(advertiser=self.request.user)
+        serializer.save(advertiser=self.request.user)
 
 
 class CreativeViewSet(ModelViewSet):
     """ViewSet for managing creatives"""
-    # TEMPORARILY DISABLED FOR TESTING
-    # authentication_classes = [JWTAuthentication]
-    # permission_classes = [IsAuthenticated]
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
     serializer_class = CreativeSerializer
     
     def get_queryset(self):
-        # TEMPORARILY RETURN ALL CREATIVES (NO USER FILTERING)
+        user = self.request.user
         campaign_id = self.kwargs.get('campaign_pk')
-        return Creative.objects.filter(campaign_id=campaign_id)
-        # user = self.request.user
-        # campaign_id = self.kwargs.get('campaign_pk')
-        # 
-        # if user.is_staff:
-        #     return Creative.objects.filter(campaign_id=campaign_id)
-        # 
-        # return Creative.objects.filter(
-        #     campaign_id=campaign_id,
-        #     campaign__advertiser=user
-        # )
+        
+        if user.is_staff:
+            return Creative.objects.filter(campaign_id=campaign_id)
+        
+        return Creative.objects.filter(
+            campaign_id=campaign_id,
+            campaign__advertiser=user
+        )
     
     def perform_create(self, serializer):
         campaign_id = self.kwargs.get('campaign_pk')
@@ -94,26 +80,21 @@ class CreativeViewSet(ModelViewSet):
 
 class TargetViewSet(ModelViewSet):
     """ViewSet for managing targeting"""
-    # TEMPORARILY DISABLED FOR TESTING
-    # authentication_classes = [JWTAuthentication]
-    # permission_classes = [IsAuthenticated]
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
     serializer_class = TargetSerializer
     
     def get_queryset(self):
-        # TEMPORARILY RETURN ALL TARGETS (NO USER FILTERING)
+        user = self.request.user
         campaign_id = self.kwargs.get('campaign_pk')
-        return Target.objects.filter(campaign_id=campaign_id)
-        # user = self.request.user
-        # campaign_id = self.kwargs.get('campaign_pk')
-        # 
-        # if user.is_staff:
-        #     return Target.objects.filter(campaign_id=campaign_id)
-        # 
-        # return Target.objects.filter(
-        #     campaign_id=campaign_id,
-        #     campaign__advertiser=user
-        # )
+        
+        if user.is_staff:
+            return Target.objects.filter(campaign_id=campaign_id)
+        
+        return Target.objects.filter(
+            campaign_id=campaign_id,
+            campaign__advertiser=user
+        )
     
     def perform_create(self, serializer):
         campaign_id = self.kwargs.get('campaign_pk')
@@ -122,22 +103,18 @@ class TargetViewSet(ModelViewSet):
 
 class PlacementViewSet(ModelViewSet):
     """ViewSet for managing ad placements"""
-    # TEMPORARILY DISABLED FOR TESTING
-    # authentication_classes = [JWTAuthentication]
-    # permission_classes = [IsAuthenticated]
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
     serializer_class = PlacementSerializer
     queryset = Placement.objects.all()
     
     def get_queryset(self):
-        # TEMPORARILY RETURN ALL PLACEMENTS
-        return Placement.objects.all()
-        # user = self.request.user
-        # # Only admin users can see all placements
-        # if user.is_staff:
-        #     return Placement.objects.all()
-        # # Regular users can still see active placements
-        # return Placement.objects.filter(is_active=True)
+        user = self.request.user
+        # Only admin users can see all placements
+        if user.is_staff:
+            return Placement.objects.all()
+        # Regular users can still see active placements
+        return Placement.objects.filter(is_active=True)
 
 
 class MobileAdServingView(APIView):
@@ -439,46 +416,35 @@ class LogAdClickView(APIView):
 
 class AnalyticsView(APIView):
     """View for retrieving ad performance analytics"""
-    # TEMPORARILY DISABLED FOR TESTING
-    # authentication_classes = [JWTAuthentication]
-    # permission_classes = [IsAuthenticated]
-    permission_classes = [AllowAny]
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
     
     def get(self, request, campaign_id=None):
-        # TEMPORARILY RETURN ALL ANALYTICS (NO USER FILTERING)
+        user = request.user
+        
         if campaign_id:
             # Get stats for specific campaign
-            try:
-                campaign = Campaign.objects.get(id=campaign_id)
-                stats = self._get_campaign_stats(campaign)
-                return Response(stats)
-            except Campaign.DoesNotExist:
+            campaign = self._get_campaign(user, campaign_id)
+            if not campaign:
                 return Response({"detail": "Campaign not found"}, status=status.HTTP_404_NOT_FOUND)
+                
+            stats = self._get_campaign_stats(campaign)
+            return Response(stats)
         else:
-            # Get stats for all campaigns
-            campaign_ids = Campaign.objects.values_list('id', flat=True)
+            # Get stats for all user's campaigns
+            if user.is_staff:
+                campaign_ids = Campaign.objects.values_list('id', flat=True)
+            else:
+                campaign_ids = Campaign.objects.filter(advertiser=user).values_list('id', flat=True)
+                
             stats = self._get_campaigns_stats(campaign_ids)
             return Response(stats)
-        
-        # user = request.user
-        # 
-        # if campaign_id:
-        #     # Get stats for specific campaign
-        #     campaign = self._get_campaign(user, campaign_id)
-        #     if not campaign:
-        #         return Response({"detail": "Campaign not found"}, status=status.HTTP_404_NOT_FOUND)
-        #         
-        #     stats = self._get_campaign_stats(campaign)
-        #     return Response(stats)
-        # else:
-        #     # Get stats for all user's campaigns
-        #     if user.is_staff:
-        #         campaign_ids = Campaign.objects.values_list('id', flat=True)
-        #     else:
-        #         campaign_ids = Campaign.objects.filter(advertiser=user).values_list('id', flat=True)
-        #         
-        #     stats = self._get_campaigns_stats(campaign_ids)
-        #     return Response(stats)
+    
+    def _get_campaign(self, user, campaign_id):
+        """Get a campaign with permission check"""
+        if user.is_staff:
+            return Campaign.objects.get(id=campaign_id)
+        return Campaign.objects.get(id=campaign_id, advertiser=user)
     
     def _get_campaign_stats(self, campaign):
         """Get performance stats for a single campaign"""
